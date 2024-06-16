@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-easybutton@2.4.0/src/easy-button.css" />
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pouchdb@7.3.0/dist/pouchdb.min.js"></script>
+  <script
+    src="https://cdn.jsdelivr.net/npm/leaflet-tilelayer-pouchdbcached@0.1.1/dist/leaflet-tilelayer-pouchdbcached.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-easybutton@2.4.0/src/easy-button.js"></script>
+
+  <script src="./utils.js"></script>
+  <style>
+    body {
+      margin: 0;
+    }
+
+    #map {
+      height: 100dvh;
+      width: 100vw;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+
+  <script>
+    let stage = 0
+    let venetoTrkpts, venetoPolygon
+
+    const COORDS = {
+      BARCELONA: [41.380075, 2.184077],
+      VENECE: [45.467836, 12.293701],
+      GENOVA: [44.406316, 8.920898],
+      VENETO: [45.644768, 11.782837],
+      LAKE: [45.448571, 10.689697],
+    }
+
+    //ICONS
+    const elio = makeMarker(COORDS.BARCELONA, 5, '/img/elio.png', 106, 135)
+    const plane = makeMarker(COORDS.BARCELONA, 1, '/img/plane.png', 1920, 657, 0.25)
+    const bus = makeMarker(COORDS.BARCELONA, 1, '/img/flix.png', 575, 434, 0.5)
+
+    const ANIMATION_TYPE = {
+      FLY: "FLY",
+      TRACK: "TRACK",
+      IMG: "IMG",
+      BOUNDARY: "BOUNDARY"
+    }
+
+    const stages = [
+      {
+        type: ANIMATION_TYPE.IMG,
+        msg: "SHOW ELIO ON BARCELONA",
+        skip: true,
+        move: COORDS.BARCELONA,
+        object: elio,
+        duration: 2
+      }, {
+        type: ANIMATION_TYPE.FLY,
+        latlng: COORDS.BARCELONA,
+        msg: "start at BARCELONA",
+        zoom: 13
+      }, {
+        type: ANIMATION_TYPE.BOUNDARY,
+        msg: "show BARCELONA - VENECE",
+        coords: [
+          COORDS.BARCELONA,
+          COORDS.VENECE
+        ]
+      }, {
+        type: ANIMATION_TYPE.IMG,
+        msg: "move ELIO BARCELONA,VENECE",
+        from: COORDS.BARCELONA,
+        move: COORDS.VENECE,
+        object: [plane, elio],
+        duration: 3,
+        skip: true,
+      }, {
+        msg: "show (VENECE, VENETO)",
+        type: ANIMATION_TYPE.BOUNDARY,
+        coords: [
+          COORDS.VENECE,
+          COORDS.VENETO
+        ],
+        skip: true,
+      }, {
+        type: ANIMATION_TYPE.IMG,
+        msg: "hide plane",
+        hide: true,
+        object: plane,
+        duration: 3
+      }, {
+        type: ANIMATION_TYPE.IMG,
+        msg: "elio IMG from VENECE to VENETO",
+        move: COORDS.VENETO,
+        object: elio,
+        duration: 3,
+      }, {
+        type: ANIMATION_TYPE.TRACK,
+        msg: "elio ride track",
+        speed: 10,
+        object: elio
+      }, {
+        type: ANIMATION_TYPE.BOUNDARY,
+        msg: "show VENECE - GENOVA",
+        coords: [
+          COORDS.LAKE,
+          COORDS.VENECE
+        ]
+      }, {
+        type: ANIMATION_TYPE.IMG,
+        msg: "elio IMG from VENETO to LAKE",
+        move: COORDS.LAKE,
+        object: elio,
+        duration: 1.5,
+      }, {
+        type: ANIMATION_TYPE.BOUNDARY,
+        msg: "show VENECE - GENOVA",
+        coords: [
+          COORDS.GENOVA,
+          COORDS.VENECE
+        ]
+      }, {
+        type: ANIMATION_TYPE.IMG,
+        msg: "elio IMG from LAKE to GENOVA",
+        skip: true,
+        move: COORDS.GENOVA,
+        object: elio,
+        duration: 2,
+      }, {
+        type: ANIMATION_TYPE.BOUNDARY,
+        msg: "show GENOVA - BARCELONA",
+        coords: [
+          COORDS.GENOVA,
+          COORDS.BARCELONA
+        ]
+      }, {
+        type: ANIMATION_TYPE.IMG,
+        msg: "move ELIO GENOVA - BARCELONA",
+        from: COORDS.GENOVA,
+        move: [
+          [44.684277, 8.690186],
+          [43.524655, 6.031494],
+          [44.024422, 3.955078],
+          [43.229195, 2.48291],
+          COORDS.BARCELONA,
+        ],
+        object: [bus, elio],
+        duration: 3,
+        skip: true,
+      }, {
+        type: ANIMATION_TYPE.IMG,
+        msg: "hide bus",
+        hide: true,
+        object: bus,
+        duration: 3
+      },
+    ]
+
+    //---------------- OBJETOS ------------------------------------------------------------------
+
+
+    const map = L.map('map').setView(COORDS.BARCELONA, 8);
+    L.tileLayer('https://b.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+
+    animate()
+
+    // plane.addTo(map)
+    // elio.addTo(map)
+
+    //---------------- OBJETOS ------------------------------------------------------------------
+
+
+    //---------------- CARGAR TRACK ------------------------------------------------------------------
+
+    async function load() {
+
+      venetoTrkpts = await getPolygonFromGpx('./veneto.gpx')
+
+      venetoPolygon = L.polygon(
+        venetoTrkpts.map(x => [parseFloat(x.lat), parseFloat(x.lng)]),
+        {
+          color: 'blue', // Outline color
+          weight: 4,     // Outline width
+          fill: false,   // No fill
+
+        }
+      ).addTo(map);
+    }
+    load()
+
+    //---------------- CARGAR TRACK ------------------------------------------------------------------
+
+
+
+
+    //---------------- ANIMATE ------------------------------------------------------------------
+
+
+    async function animate() {
+
+      const animation = stages[stage]
+
+      if (animation.msg) {
+        console.log(`stage: ${stage}`, animation.msg)
+      }
+
+      if (animation.type === ANIMATION_TYPE.FLY) {
+        map.flyTo(animation.latlng, animation.zoom, {
+          animate: true,
+          duration: 3 // duration in seconds
+        })
+
+      } else if (animation.type === ANIMATION_TYPE.TRACK) {
+
+        await new Promise((resolve) => {
+          map.flyToBounds(venetoPolygon.getBounds(), {
+            duration: 2,
+            easeLinearity: 1,
+            animate: true
+          });
+          map.once('moveend', resolve);
+        });
+
+        let i = 0;
+        let animationInterval;
+
+        //ANIMATE object in TRACK
+        function animateObject() {
+          animation.object.setLatLng(venetoTrkpts[i]);
+          i += animation.speed;
+
+          if (i >= venetoTrkpts.length - 1) {
+            clearInterval(animationInterval);
+          }
+        }
+
+        animationInterval = setInterval(animateObject, 1);
+
+
+      } else if (animation.type === ANIMATION_TYPE.IMG) {
+        const objects = Array.isArray(animation.object) ? animation.object : [animation.object]
+        const time = Array.isArray(animation.duration) ? animation.duration.map(x => x * 1000)
+          : !isNaN(animation.duration) ? animation.duration * 1000
+            : 0
+
+        if (animation.move) {
+          objects.forEach((x, i) => {
+            if (!x._map) {
+              x.addTo(map)
+              x.setZIndexOffset(x.zindex);
+            }
+          })
+
+          await animateMarkers(objects, animation.from, animation.move, time)
+
+        } else if (animation.hide) {
+          objects.forEach(x => {
+            x.remove()
+          })
+        }
+      } else if (animation.type === ANIMATION_TYPE.BOUNDARY) {
+        const polygon = L.polygon(animation.coords)
+        const bounds = polygon.getBounds()
+        const duration = animation.duration || 2
+        // map.flyToBounds(bounds, {duration})
+
+        await new Promise((resolve) => {
+          map.flyToBounds(bounds, {
+            duration,
+            easeLinearity: 1,
+            animate: true,
+            padding: [50, 50],
+          });
+
+          map.once('moveend', resolve);
+        });
+
+      }
+
+
+      stage = (stage + 1) % stages.length //stage ++
+      if (animation.skip) {
+        animate()
+      }
+    }
+
+    //---------------- ANIMATE ------------------------------------------------------------------
+
+
+
+    function onMapClick(e) {
+      console.log("You clicked the map at " + e.latlng);
+      animate()
+    }
+
+
+
+    map.on('click', onMapClick);
+
+  </script>
+</body>
+
+</html>
